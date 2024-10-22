@@ -1,0 +1,66 @@
+{
+  "name": "@net-fe/image-processor-plugin",
+  "version": "0.1.0",
+  "types": "./dist/types/index.d.ts",
+  "jsnext:source": "./src/index.ts",
+  "main": "./dist/lib/index.js",
+  "module": "./dist/es/index.js",
+  "scripts": {
+    "prepare": "edenx build && husky install",
+    "dev": "edenx dev",
+    "build": "edenx build",
+    "build:watch": "edenx build -w",
+    "reset": "npx rimraf ./**/node_modules",
+    "lint": "edenx lint",
+    "lint:error": "edenx lint --quiet",
+    "change": "edenx change",
+    "bump": "edenx bump",
+    "pre": "edenx pre",
+    "release": "edenx release",
+    "gen-release-note": "edenx gen-release-note",
+    "new": "edenx new",
+    "upgrade": "edenx upgrade"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "node --max_old_space_size=8192 ./node_modules/eslint/bin/eslint.js --fix --color --cache --quiet"
+    ],
+    "*.{js,jsx,mjs,mjsx,cjs,cjsx}": [
+      "node --max_old_space_size=8192 ./node_modules/eslint/bin/eslint.js --fix --color --cache --quiet"
+    ]
+  },
+  "eslintIgnore": [
+    "node_modules/",
+    "dist/",
+    "coverage/",
+    "edenx.config.ts"
+  ],
+  "dependencies": {
+    "@modern-js/app-tools": "^2.60.0",
+    "fonteditor-core": "^2.4.1",
+    "webpack": "^5.94.0",
+    "sharp": "^0.33.5"
+  },
+  "peerDependencies": {},
+  "devDependencies": {
+    "@byted/eslint-config-standard": "^3.1.1",
+    "@byted/eslint-config-standard-react": "^2.1.1",
+    "@byted/eslint-config-standard-ts": "^3.1.1",
+    "@edenx/module-tools": "1.59.0",
+    "@modern-js/module-tools": "2.60.0",
+    "@modern-js/plugin-testing": "^2.60.0",
+    "@modern-js/types": "2.60.0",
+    "@types/node": "^22.5.4",
+    "eslint": "^8.57.0",
+    "eslint-plugin-prettier": "~4.2.1",
+    "husky": "~8.0.1",
+    "lint-staged": "~13.1.0",
+    "prettier": "~2.8.1",
+    "rimraf": "~3.0.2",
+    "typescript": "~5.0.4"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://bnpm.byted.org/"
+  }
+}
