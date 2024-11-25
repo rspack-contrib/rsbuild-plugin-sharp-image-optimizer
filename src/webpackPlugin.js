@@ -28,7 +28,15 @@ class AVIFWebpackPlugin {
                 this.options.imagePath,
                 `${path.parse(fileName).name}.avif`,
               );
-              // const newFileName = `${path.parse(fileName).name}.avif`;
+
+              // Find the chunks that reference the original asset
+              const chunks = [];
+              compilation.chunks.forEach(chunk => {
+                if (chunk.files.has(fileName)) {
+                  chunks.push(chunk);
+                }
+              });
+
               promises.push(
                 sharp(asset.buffer())
                   .avif({
@@ -37,10 +45,27 @@ class AVIFWebpackPlugin {
                   })
                   .toBuffer()
                   .then(buffer => {
-                    compilation.emitAsset(newFileName, {
-                      source: () => buffer,
-                      size: () => buffer.length,
-                    });
+                    // Emit the asset and associate it with the found chunks
+                    compilation.emitAsset(
+                      newFileName,
+                      {
+                        source: () => buffer,
+                        size: () => buffer.length,
+                      },
+                      {
+                        chunks,
+                      },
+                    );
+
+                    // If no chunks found, try to associate with entry points
+                    if (chunks.length === 0) {
+                      const entrypoints = compilation.entrypoints.values();
+                      for (const entry of entrypoints) {
+                        entry.chunks.forEach(chunk => {
+                          chunk.files.add(newFileName);
+                        });
+                      }
+                    }
 
                     // 删除原始资源
                     compilation.deleteAsset(fileName);
