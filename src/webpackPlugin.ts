@@ -69,6 +69,7 @@ export default class AVIFWebpackPlugin {
       // 删除原始文件的引用
       compilation.chunks.forEach(chunk => {
         if (chunk.files.has(fileName)) {
+          chunks.push(chunk);
           chunk.files.delete(fileName);
         }
       });
