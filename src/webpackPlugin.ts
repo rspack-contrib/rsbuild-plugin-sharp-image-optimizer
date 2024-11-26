@@ -1,4 +1,5 @@
-import * as sharp from 'sharp';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { sharp } = require('sharp');
 import * as path from 'path';
 import { Compilation, Compiler, sources } from 'webpack';
 
