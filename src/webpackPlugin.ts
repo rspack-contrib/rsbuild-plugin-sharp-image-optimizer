@@ -1,8 +1,18 @@
-const sharp = require('sharp');
-const path = require('path');
-const { RawSource } = require('webpack-sources');
-class AVIFWebpackPlugin {
-  constructor(options) {
+import * as sharp from 'sharp';
+import * as path from 'path';
+import { Compilation, Compiler, sources } from 'webpack';
+
+export default class AVIFWebpackPlugin {
+  private options: {
+    test: RegExp;
+    quality: number;
+    effort: number;
+    [key: string]: any;
+  };
+
+  constructor(
+    options: Partial<typeof AVIFWebpackPlugin.prototype.options> = {},
+  ) {
     this.options = {
       test: /\.(png|jpe?g|gif|webp)$/i,
       quality: 50,
@@ -11,12 +21,12 @@ class AVIFWebpackPlugin {
     };
   }
 
-  apply(compiler) {
+  apply(compiler: Compiler) {
     compiler.hooks.compilation.tap('AVIFWebpackPlugin', compilation => {
       compilation.hooks.processAssets.tapAsync(
         {
           name: 'AVIFWebpackPlugin',
-          stage: compilation.PROCESS_ASSETS_STAGE_OPTIMIZE_SIZE,
+          stage: Compilation.PROCESS_ASSETS_STAGE_OPTIMIZE_SIZE,
         },
         async (assets, callback) => {
           try {
@@ -38,7 +48,7 @@ class AVIFWebpackPlugin {
     });
   }
 
-  async processImage(compilation, fileName, asset) {
+  async processImage(compilation: Compilation, fileName: string, asset: any) {
     const newFileName = path.join(
       this.options.imagePath || '',
       `${path.parse(fileName).name}.avif`,
@@ -57,33 +67,34 @@ class AVIFWebpackPlugin {
         .toBuffer();
 
       // 删除原始文件的引用
-      // 删除原始文件的引用
-      chunks.forEach(chunk => {
-        chunk.files.delete(fileName);
-        // 将新文件添加到原始的 chunks 中
-        chunk.files.add(newFileName);
+      compilation.chunks.forEach(chunk => {
+        if (chunk.files.has(fileName)) {
+          chunk.files.delete(fileName);
+        }
       });
 
-      // 从所有入口点中删除原始文件引用
-      for (const entry of compilation.entrypoints.values()) {
-        entry.chunks.forEach(chunk => chunk.files.delete(fileName));
-      }
+      // 从入口点中也删除引用
+      compilation.entrypoints.forEach(entry => {
+        entry.chunks.forEach(chunk => {
+          chunk.files.delete(fileName);
+        });
+      });
 
-      // 删除原始资源
+      // 最后删除资产
       compilation.deleteAsset(fileName);
 
       // 添加新的 AVIF 资源
-      compilation.emitAsset(newFileName, new RawSource(buffer), {
-        source: () => buffer,
-        size: () => buffer.length,
+      compilation.emitAsset(newFileName, new sources.RawSource(buffer), {
+        source: buffer,
+        size: buffer.length,
         chunks,
       });
 
       // 如果没有找到原始的 chunks，将新文件添加到所有入口点
       if (chunks.length === 0) {
-        for (const entry of compilation.entrypoints.values()) {
+        Array.from(compilation.entrypoints.values()).forEach(entry => {
           entry.chunks.forEach(chunk => chunk.files.add(newFileName));
-        }
+        });
       }
 
       // 更新文件引用
@@ -112,7 +123,7 @@ class AVIFWebpackPlugin {
             ? path.posix.join(this.options.publicPath, newFileName)
             : path.posix.join(newFileName);
           content = content.replace(regex, newPath);
-          compilation.updateAsset(name, new RawSource(content));
+          compilation.updateAsset(name, new sources.RawSource(content));
           console.log(
             `[AVIFWebpackPlugin]: Updated reference in ${name}: ${oldFileName} -> ${newPath}`,
           );
@@ -125,5 +136,3 @@ class AVIFWebpackPlugin {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }
-
-module.exports = AVIFWebpackPlugin;
