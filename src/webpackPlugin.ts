@@ -1,6 +1,5 @@
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { sharp } = require('sharp');
-import * as path from 'path';
+import sharp from 'sharp';
+import path from 'path';
 import { Compilation, Compiler, sources } from 'webpack';
 
 export default class AVIFWebpackPlugin {
@@ -113,7 +112,11 @@ export default class AVIFWebpackPlugin {
     }
   }
 
-  updateReferences(compilation, oldFileName, newFileName) {
+  updateReferences(
+    compilation: Compilation,
+    oldFileName: string,
+    newFileName: string,
+  ) {
     const assets = compilation.getAssets();
     for (const { name, source } of assets) {
       if (name.endsWith('.css') || name.endsWith('.js')) {
@@ -133,7 +136,7 @@ export default class AVIFWebpackPlugin {
     }
   }
 
-  escapeRegExp(string) {
+  escapeRegExp(string: string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }

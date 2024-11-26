@@ -5,6 +5,7 @@
     "jsx": "preserve",
     "baseUrl": "./",
     "isolatedModules": true,
+    "esModuleInterop": true,
     "paths": {}
   },
   "include": ["src", "global.d.ts"]
