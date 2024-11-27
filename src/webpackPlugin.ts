@@ -26,7 +26,7 @@ export default class AVIFWebpackPlugin {
       compilation.hooks.processAssets.tapAsync(
         {
           name: 'AVIFWebpackPlugin',
-          stage: Compilation.PROCESS_ASSETS_STAGE_OPTIMIZE_SIZE,
+          stage: Compilation.PROCESS_ASSETS_STAGE_OPTIMIZE_TRANSFER,
         },
         async (assets, callback) => {
           try {
@@ -93,7 +93,7 @@ export default class AVIFWebpackPlugin {
 
       // 如果没有找到原始的 chunks，将新文件添加到所有入口点
       if (chunks.length === 0) {
-        Array.from(compilation.entrypoints.values()).forEach(entry => {
+        compilation.entrypoints.forEach(entry => {
           entry.chunks.forEach(chunk => chunk.files.add(newFileName));
         });
       }
