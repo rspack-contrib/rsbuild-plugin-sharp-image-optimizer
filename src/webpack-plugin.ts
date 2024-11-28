@@ -1,6 +1,6 @@
 import sharp from 'sharp';
 import path from 'path';
-import { Compilation, Compiler, sources } from 'webpack';
+import { Compilation, Compiler, sources, Chunk } from 'webpack';
 
 export default class AVIFWebpackPlugin {
   private options: {
@@ -41,7 +41,7 @@ export default class AVIFWebpackPlugin {
             await Promise.all(promises);
             callback();
           } catch (error) {
-            callback(error);
+            callback(error as Error);
           }
         },
       );
@@ -49,16 +49,12 @@ export default class AVIFWebpackPlugin {
   }
 
   async processImage(compilation: Compilation, fileName: string, asset: any) {
-    const newFileName = path.join(
-      this.options.imagePath || '',
-      `${path.parse(fileName).name}.avif`,
-    );
-
-    const chunks = Array.from(compilation.chunks).filter(chunk =>
-      chunk.files.has(fileName),
-    );
-
     try {
+      const newFileName = path.join(
+        this.options.imagePath || '',
+        `${path.parse(fileName).name}.avif`,
+      );
+
       const buffer = await sharp(asset.buffer())
         .avif({
           quality: this.options.quality,
@@ -66,43 +62,28 @@ export default class AVIFWebpackPlugin {
         })
         .toBuffer();
 
-      // 删除原始文件的引用
+      // 获取原始资源的信息
+      const originalInfo = compilation.getAsset(fileName);
+
+      // 使用与原始资源相同的信息创建新资源
+      compilation.emitAsset(newFileName, new sources.RawSource(buffer), {
+        ...originalInfo?.info, // 保留原始资源的所有信息
+        source: buffer,
+        size: buffer.length,
+        sourceFilename: fileName, // 标记源文件
+        immutable: true, // 标记为不可变资源
+        chunk: originalInfo?.info.chunk as Chunk,
+      });
+
+      // 确保新资源与原始资源关联相同的 chunks
       compilation.chunks.forEach(chunk => {
         if (chunk.files.has(fileName)) {
-          chunks.push(chunk);
-          chunk.files.delete(fileName);
+          chunk.files.add(newFileName);
         }
       });
 
-      // 从入口点中也删除引用
-      compilation.entrypoints.forEach(entry => {
-        entry.chunks.forEach(chunk => {
-          chunk.files.delete(fileName);
-        });
-      });
-
-      // 最后删除资产
-      compilation.deleteAsset(fileName);
-
-      // 添加新的 AVIF 资源
-      compilation.emitAsset(newFileName, new sources.RawSource(buffer), {
-        source: buffer,
-        size: buffer.length,
-        chunks,
-      });
-
-      // 如果没有找到原始的 chunks，将新文件添加到所有入口点
-      if (chunks.length === 0) {
-        compilation.entrypoints.forEach(entry => {
-          entry.chunks.forEach(chunk => chunk.files.add(newFileName));
-        });
-      }
-
-      // 更新文件引用
-      await this.updateReferences(compilation, fileName, newFileName);
-
       console.log(
-        `[AVIFWebpackPlugin]: Converted ${fileName} to ${newFileName}`,
+        `[AVIFWebpackPlugin]: Created ${newFileName} from ${fileName}`,
       );
     } catch (error) {
       console.error(

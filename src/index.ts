@@ -1,5 +1,5 @@
 import type { CliPlugin, AppTools } from '@modern-js/app-tools';
-import imageProcessorPlugin from './webpackPlugin';
+import imageProcessorPlugin from './webpack-plugin';
 
 export const imagePlugin = ({
   test,
