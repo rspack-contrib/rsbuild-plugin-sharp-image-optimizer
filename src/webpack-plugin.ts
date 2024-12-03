@@ -26,19 +26,38 @@ export default class AVIFWebpackPlugin {
       compilation.hooks.processAssets.tapAsync(
         {
           name: 'AVIFWebpackPlugin',
-          stage: Compilation.PROCESS_ASSETS_STAGE_OPTIMIZE_TRANSFER,
+          stage: Compilation.PROCESS_ASSETS_STAGE_OPTIMIZE_SIZE,
         },
         async (assets, callback) => {
           try {
             const promises = [];
+            const originalAssets = new Set<string>();
 
             for (const [fileName, asset] of Object.entries(assets)) {
               if (this.options.test.test(fileName)) {
+                originalAssets.add(fileName);
                 promises.push(this.processImage(compilation, fileName, asset));
               }
             }
 
             await Promise.all(promises);
+
+            // 删除原始图片资源
+            originalAssets.forEach(fileName => {
+              compilation.deleteAsset(fileName);
+              console.log(
+                `[AVIFWebpackPlugin]: Deleted original asset ${fileName}`,
+              );
+            });
+
+            // 打印最终的 chunk 信息
+            console.log('\n[Final Chunk Information]');
+            compilation.chunks.forEach(chunk => {
+              console.log(`Chunk ${chunk.id}:`, {
+                files: Array.from(chunk.files),
+              });
+            });
+
             callback();
           } catch (error) {
             callback(error as Error);
@@ -64,26 +83,61 @@ export default class AVIFWebpackPlugin {
 
       // 获取原始资源的信息
       const originalInfo = compilation.getAsset(fileName);
+      if (!originalInfo) {
+        console.log(
+          `[AVIFWebpackPlugin]: Original asset ${fileName} not found`,
+        );
+        return;
+      }
 
-      // 使用与原始资源相同的信息创建新资源
+      // 修改查找受影响 chunks 的逻辑
+      const affectedChunks = new Set<Chunk>();
+      for (const chunk of compilation.chunks) {
+        // 检查 chunk 中的所有模块
+        const modules = compilation.chunkGraph.getChunkModules(chunk);
+        for (const module of modules) {
+          // 获取模块的资源文件
+          const moduleAssets = module.buildInfo?.assets;
+          if (moduleAssets?.[fileName]) {
+            affectedChunks.add(chunk);
+            console.log(`Found chunk ${chunk.id} containing ${fileName}`);
+            break;
+          }
+        }
+      }
+
+      // 创建新的 AVIF 资源
       compilation.emitAsset(newFileName, new sources.RawSource(buffer), {
-        ...originalInfo?.info, // 保留原始资源的所有信息
+        ...originalInfo.info,
         source: buffer,
         size: buffer.length,
-        sourceFilename: fileName, // 标记源文件
-        immutable: true, // 标记为不可变资源
-        chunk: originalInfo?.info.chunk as Chunk,
+        sourceFilename: fileName,
       });
 
-      // 确保新资源与原始资源关联相同的 chunks
-      compilation.chunks.forEach(chunk => {
-        if (chunk.files.has(fileName)) {
+      // 更新 chunks 的文件列表
+      if (affectedChunks.size > 0) {
+        affectedChunks.forEach(chunk => {
+          // 确保原始图片和 AVIF 都在 chunk 的文件列表中
+          chunk.files.add(fileName);
           chunk.files.add(newFileName);
+          console.log(
+            `Updated chunk ${chunk.id} with both ${fileName} and ${newFileName}`,
+          );
+        });
+      } else {
+        // 如果没有找到相关的 chunks，将文件添加到主 chunk
+        const mainChunk = Array.from(compilation.chunks).find(
+          chunk => chunk.name === 'main',
+        );
+        if (mainChunk) {
+          mainChunk.files.add(fileName);
+          mainChunk.files.add(newFileName);
+          console.log('Added files to main chunk as fallback');
         }
-      });
+      }
 
       console.log(
-        `[AVIFWebpackPlugin]: Created ${newFileName} from ${fileName}`,
+        `[AVIFWebpackPlugin]: Successfully processed ${fileName} to ${newFileName}`,
       );
     } catch (error) {
       console.error(
