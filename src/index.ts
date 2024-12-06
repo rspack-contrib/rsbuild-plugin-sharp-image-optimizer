@@ -5,15 +5,17 @@ export const imagePlugin = ({
   test,
   quality,
   effort,
+  ...pluginOptions
 }: {
   test: RegExp;
   quality: number;
   effort: number;
+  [key: string]: any; // 允许任意其他选项
 }): CliPlugin<AppTools> => ({
   name: 'image-compress-plugin',
   setup(api) {
     const config = api.useConfigContext();
-    const imagePath = config.output?.distPath?.image || 'static/image';
+    const imagePath = config.output?.distPath?.image ?? 'static/image';
     return {
       config: () => ({
         tools: {
@@ -23,9 +25,7 @@ export const imagePlugin = ({
                 .plugin('image-compress-webpack-plugin')
                 .use(imageProcessorPlugin, [
                   {
-                    test,
-                    quality,
-                    effort,
+                    ...pluginOptions,
                     imagePath,
                   },
                 ]);

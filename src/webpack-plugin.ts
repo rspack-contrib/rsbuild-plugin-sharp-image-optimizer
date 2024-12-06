@@ -7,6 +7,7 @@ export default class AVIFWebpackPlugin {
     test: RegExp;
     quality: number;
     effort: number;
+    format?: 'avif' | 'jpeg' | 'png' | 'webp' | 'jpg';
     [key: string]: any;
   };
 
@@ -17,6 +18,7 @@ export default class AVIFWebpackPlugin {
       test: /\.(png|jpe?g|gif|webp)$/i,
       quality: 50,
       effort: 4,
+      format: 'avif',
       ...options,
     };
   }
@@ -35,27 +37,27 @@ export default class AVIFWebpackPlugin {
 
             for (const [fileName, asset] of Object.entries(assets)) {
               if (this.options.test.test(fileName)) {
-                originalAssets.add(fileName);
+                const originalExt = path
+                  .parse(fileName)
+                  .ext.toLowerCase()
+                  .replace('.', '');
+                // 只有需要格式转换的文件才加入到待删除集合中
+                if (
+                  this.options.format !== originalExt &&
+                  !(this.options.format === 'jpeg' && originalExt === 'jpg') &&
+                  !(this.options.format === 'jpg' && originalExt === 'jpeg')
+                ) {
+                  originalAssets.add(fileName);
+                }
                 promises.push(this.processImage(compilation, fileName, asset));
               }
             }
 
             await Promise.all(promises);
 
-            // 删除原始图片资源
+            // 只删除需要格式转换的原始文件
             originalAssets.forEach(fileName => {
               compilation.deleteAsset(fileName);
-              console.log(
-                `[AVIFWebpackPlugin]: Deleted original asset ${fileName}`,
-              );
-            });
-
-            // 打印最终的 chunk 信息
-            console.log('\n[Final Chunk Information]');
-            compilation.chunks.forEach(chunk => {
-              console.log(`Chunk ${chunk.id}:`, {
-                files: Array.from(chunk.files),
-              });
             });
 
             callback();
@@ -69,79 +71,92 @@ export default class AVIFWebpackPlugin {
 
   async processImage(compilation: Compilation, fileName: string, asset: any) {
     try {
-      const newFileName = path.join(
-        this.options.imagePath || '',
-        `${path.parse(fileName).name}.avif`,
-      );
+      const { test, format, imagePath, publicPath, ...sharpOptions } =
+        this.options;
+      const originalExt = path
+        .parse(fileName)
+        .ext.toLowerCase()
+        .replace('.', '');
 
-      const buffer = await sharp(asset.buffer())
-        .avif({
-          quality: this.options.quality,
-          effort: this.options.effort,
-        })
-        .toBuffer();
+      const needsFormatConversion =
+        format !== originalExt &&
+        !(format === 'jpeg' && originalExt === 'jpg') &&
+        !(format === 'jpg' && originalExt === 'jpeg');
 
-      // 获取原始资源的信息
-      const originalInfo = compilation.getAsset(fileName);
-      if (!originalInfo) {
-        console.log(
-          `[AVIFWebpackPlugin]: Original asset ${fileName} not found`,
-        );
-        return;
+      const newFileName = needsFormatConversion
+        ? path.join(
+            imagePath || '',
+            `${path.parse(fileName).name}.${format || 'avif'}`,
+          )
+        : fileName;
+
+      let buffer;
+      switch (format) {
+        case 'jpeg':
+          buffer = await sharp(asset.buffer()).jpeg(sharpOptions).toBuffer();
+          break;
+        case 'png':
+          buffer = await sharp(asset.buffer()).png(sharpOptions).toBuffer();
+          break;
+        case 'webp':
+          buffer = await sharp(asset.buffer()).webp(sharpOptions).toBuffer();
+          break;
+        case 'avif':
+        default:
+          buffer = await sharp(asset.buffer()).avif(sharpOptions).toBuffer();
+          break;
       }
 
-      // 修改查找受影响 chunks 的逻辑
+      if (!needsFormatConversion) {
+        compilation.updateAsset(fileName, new sources.RawSource(buffer), {
+          source: buffer,
+          size: buffer.length,
+        });
+      } else {
+        const originalInfo = compilation.getAsset(fileName);
+        if (!originalInfo) {
+          return;
+        }
+
+        compilation.emitAsset(newFileName, new sources.RawSource(buffer), {
+          ...originalInfo.info,
+          source: buffer,
+          size: buffer.length,
+          sourceFilename: fileName,
+        });
+      }
+
       const affectedChunks = new Set<Chunk>();
       for (const chunk of compilation.chunks) {
-        // 检查 chunk 中的所有模块
         const modules = compilation.chunkGraph.getChunkModules(chunk);
         for (const module of modules) {
-          // 获取模块的资源文件
           const moduleAssets = module.buildInfo?.assets;
           if (moduleAssets?.[fileName]) {
-            affectedChunks.add(chunk);
-            console.log(`Found chunk ${chunk.id} containing ${fileName}`);
+            if (!chunk.files.has(newFileName)) {
+              affectedChunks.add(chunk);
+            }
             break;
           }
         }
       }
 
-      // 创建新的 AVIF 资源
-      compilation.emitAsset(newFileName, new sources.RawSource(buffer), {
-        ...originalInfo.info,
-        source: buffer,
-        size: buffer.length,
-        sourceFilename: fileName,
-      });
-
-      // 更新 chunks 的文件列表
       if (affectedChunks.size > 0) {
         affectedChunks.forEach(chunk => {
-          // 确保原始图片和 AVIF 都在 chunk 的文件列表中
           chunk.files.add(fileName);
           chunk.files.add(newFileName);
-          console.log(
-            `Updated chunk ${chunk.id} with both ${fileName} and ${newFileName}`,
-          );
         });
       } else {
-        // 如果没有找到相关的 chunks，将文件添加到主 chunk
         const mainChunk = Array.from(compilation.chunks).find(
           chunk => chunk.name === 'main',
         );
         if (mainChunk) {
           mainChunk.files.add(fileName);
           mainChunk.files.add(newFileName);
-          console.log('Added files to main chunk as fallback');
         }
       }
-
-      console.log(
-        `[AVIFWebpackPlugin]: Successfully processed ${fileName} to ${newFileName}`,
-      );
     } catch (error) {
       console.error(
-        `[AVIFWebpackPlugin]: Error processing ${fileName}:`,
+        `[ImageWebpackPlugin]: Error processing ${fileName}:`,
         error,
       );
       throw error;
@@ -164,9 +179,6 @@ export default class AVIFWebpackPlugin {
             : path.posix.join(newFileName);
           content = content.replace(regex, newPath);
           compilation.updateAsset(name, new sources.RawSource(content));
-          console.log(
-            `[AVIFWebpackPlugin]: Updated reference in ${name}: ${oldFileName} -> ${newPath}`,
-          );
         }
       }
     }
