@@ -1,6 +1,6 @@
 {
   "name": "@net-fe/image-processor-plugin",
-  "version": "0.1.6-beta.2",
+  "version": "0.1.6",
   "types": "./dist/types/index.d.ts",
   "jsnext:source": "./src/index.ts",
   "main": "./dist/lib/index.js",

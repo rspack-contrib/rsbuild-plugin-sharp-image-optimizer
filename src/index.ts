@@ -25,6 +25,9 @@ export const imagePlugin = ({
                 .plugin('image-compress-webpack-plugin')
                 .use(imageProcessorPlugin, [
                   {
+                    test,
+                    quality,
+                    effort,
                     ...pluginOptions,
                     imagePath,
                   },
