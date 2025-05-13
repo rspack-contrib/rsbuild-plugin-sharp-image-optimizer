@@ -1,10 +1,10 @@
 import sharp from 'sharp';
 import path from 'path';
-import { Compilation, Compiler, sources, Chunk } from 'webpack';
+import { Compilation, Compiler, sources } from '@rspack/core';
 
 export default class SharpImageOptimizerPlugin {
   private options: {
-    test: RegExp; // 移除可选标记 ?
+    test: RegExp;
     quality: number;
     effort: number;
     format?: 'avif' | 'jpeg' | 'png' | 'webp' | 'jpg';
@@ -15,7 +15,7 @@ export default class SharpImageOptimizerPlugin {
     options: Partial<typeof SharpImageOptimizerPlugin.prototype.options> = {},
   ) {
     this.options = {
-      test: /\.(png|jpe?g|webp|jpg)$/i, // 设置默认值
+      test: /\.(png|jpe?g|webp|jpg)$/i,
       quality: 50,
       effort: 4,
       format: 'avif',
@@ -41,7 +41,7 @@ export default class SharpImageOptimizerPlugin {
                   .parse(fileName)
                   .ext.toLowerCase()
                   .replace('.', '');
-                // 只有需要格式转换的文件才加入到待删除集合中
+
                 if (
                   this.options.format !== originalExt &&
                   !(this.options.format === 'jpeg' && originalExt === 'jpg') &&
@@ -55,7 +55,6 @@ export default class SharpImageOptimizerPlugin {
 
             await Promise.all(promises);
 
-            // 只删除需要格式转换的原始文件
             originalAssets.forEach(fileName => {
               compilation.deleteAsset(fileName);
             });
@@ -90,77 +89,77 @@ export default class SharpImageOptimizerPlugin {
           )
         : fileName;
 
-      let buffer;
+      // 获取资源内容
+      const content = asset.source();
+      const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content);
+
+      let outputBuffer;
       switch (format) {
         case 'jpeg':
-          buffer = await sharp(asset.buffer()).jpeg(sharpOptions).toBuffer();
+          outputBuffer = await sharp(buffer).jpeg(sharpOptions).toBuffer();
           break;
         case 'png':
-          buffer = await sharp(asset.buffer()).png(sharpOptions).toBuffer();
+          outputBuffer = await sharp(buffer).png(sharpOptions).toBuffer();
           break;
         case 'webp':
-          buffer = await sharp(asset.buffer()).webp(sharpOptions).toBuffer();
+          outputBuffer = await sharp(buffer).webp(sharpOptions).toBuffer();
           break;
         case 'avif':
         default:
-          buffer = await sharp(asset.buffer()).avif(sharpOptions).toBuffer();
+          outputBuffer = await sharp(buffer).avif(sharpOptions).toBuffer();
           break;
       }
 
       if (!needsFormatConversion) {
-        compilation.updateAsset(fileName, new sources.RawSource(buffer), {
-          source: buffer,
-          size: buffer.length,
-        });
+        compilation.updateAsset(fileName, new sources.RawSource(outputBuffer));
       } else {
         const originalInfo = compilation.getAsset(fileName);
         if (!originalInfo) {
           return;
         }
 
-        compilation.emitAsset(newFileName, new sources.RawSource(buffer), {
-          ...originalInfo.info,
-          source: buffer,
-          size: buffer.length,
-          sourceFilename: fileName,
-        });
-      }
-
-      const affectedChunks = new Set<Chunk>();
-      for (const chunk of compilation.chunks) {
-        const modules = compilation.chunkGraph.getChunkModules(chunk);
-        for (const module of modules) {
-          const moduleAssets = module.buildInfo?.assets;
-          if (moduleAssets?.[fileName]) {
-            if (!chunk.files.has(newFileName)) {
-              affectedChunks.add(chunk);
-            }
-            break;
-          }
-        }
-      }
-
-      if (affectedChunks.size > 0) {
-        affectedChunks.forEach(chunk => {
-          chunk.files.add(fileName);
-          chunk.files.add(newFileName);
-        });
-      } else {
-        const mainChunk = Array.from(compilation.chunks).find(
-          chunk => chunk.name === 'main',
+        compilation.emitAsset(
+          newFileName,
+          new sources.RawSource(outputBuffer),
+          {
+            ...originalInfo.info,
+            sourceFilename: fileName,
+          },
         );
-        if (mainChunk) {
-          mainChunk.files.add(fileName);
-          mainChunk.files.add(newFileName);
-        }
       }
+
+      // Rspack 处理 chunk 和文件关联的方式与 webpack 不同
+      // 这里使用 rspack 的 API 来处理文件关联
+      this.updateChunkRelations(compilation, fileName, newFileName);
     } catch (error) {
       console.error(
-        `[ImageWebpackPlugin]: Error processing ${fileName}:`,
+        `[SharpImageOptimizerPlugin]: Error processing ${fileName}:`,
         error,
       );
       throw error;
     }
+  }
+
+  updateChunkRelations(
+    compilation: Compilation,
+    oldFileName: string,
+    newFileName: string,
+  ) {
+    // 检查 compilation 和 chunks 是否存在
+    if (!compilation?.chunks) {
+      return;
+    }
+
+    // 遍历所有的 chunks
+    Array.from(compilation.chunks).forEach(chunk => {
+      // 检查文件是否在当前 chunk 中
+      if (chunk.files?.has(oldFileName)) {
+        // 创建一个新的 Set，包含所有现有文件和新文件
+        const newFiles = new Set([...Array.from(chunk.files), newFileName]);
+        // 使用类型断言来更新 files
+        (chunk as any).files = newFiles;
+      }
+    });
   }
 
   updateReferences(
