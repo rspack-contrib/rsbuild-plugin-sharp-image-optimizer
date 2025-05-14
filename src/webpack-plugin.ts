@@ -4,7 +4,7 @@ import { Compilation, Compiler, sources, Chunk } from 'webpack';
 
 export default class SharpImageOptimizerPlugin {
   private options: {
-    test: RegExp; // 移除可选标记 ?
+    test: RegExp;
     quality: number;
     effort: number;
     format?: 'avif' | 'jpeg' | 'png' | 'webp' | 'jpg';
@@ -127,7 +127,8 @@ export default class SharpImageOptimizerPlugin {
       }
 
       const affectedChunks = new Set<Chunk>();
-      for (const chunk of compilation.chunks) {
+      // 使用 Array.from 来处理 compilation.chunks 的迭代
+      Array.from(compilation.chunks).forEach(chunk => {
         const modules = compilation.chunkGraph.getChunkModules(chunk);
         for (const module of modules) {
           const moduleAssets = module.buildInfo?.assets;
@@ -138,10 +139,11 @@ export default class SharpImageOptimizerPlugin {
             break;
           }
         }
-      }
+      });
 
       if (affectedChunks.size > 0) {
-        affectedChunks.forEach(chunk => {
+        // 使用 Array.from 来处理 affectedChunks 的迭代
+        Array.from(affectedChunks).forEach(chunk => {
           chunk.files.add(fileName);
           chunk.files.add(newFileName);
         });

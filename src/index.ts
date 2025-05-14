@@ -39,13 +39,7 @@ export const sharpImageOptimizer = (
   return {
     name: 'rsbuild-plugin-sharp-image-optimizer',
     setup(api) {
-      console.log('插件初始化时执行 ====>', api);
-
-      // 使用 modifyBundlerChain 替代 modifyWebpackChain
       api.modifyBundlerChain((chain, { isProd }) => {
-        console.log('构建环境 ====>', isProd ? 'production' : 'development');
-        console.log('bundler类型 ====>', api.context.bundlerType);
-
         if (isProd) {
           const config = api.getNormalizedConfig();
           const imagePath = config.output?.distPath?.image ?? 'static/image';
