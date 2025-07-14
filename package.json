@@ -1,6 +1,6 @@
 {
   "name": "rsbuild-plugin-sharp-image-optimizer",
-  "version": "0.0.1-beta.1",
+  "version": "0.0.1-beta.2",
   "types": "./dist/types/index.d.ts",
   "jsnext:source": "./src/index.ts",
   "license": "MIT",

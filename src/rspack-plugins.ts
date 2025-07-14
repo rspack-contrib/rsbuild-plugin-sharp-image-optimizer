@@ -27,7 +27,6 @@ export default class SharpImageOptimizerPlugin {
     const { RawSource } = compiler.webpack.sources;
     const processedAssets = new Map<string, string>();
 
-    // 第一步：处理图片资源
     for (const [name, asset] of Object.entries(assets)) {
       if (!this.options.test.test(name)) {
         continue;
@@ -41,7 +40,6 @@ export default class SharpImageOptimizerPlugin {
         let outputBuffer: Buffer;
         let newName = name;
 
-        // 检查是否需要格式转换
         const needsFormatConversion =
           this.options.format &&
           this.options.format !== originalFormat &&
@@ -49,7 +47,6 @@ export default class SharpImageOptimizerPlugin {
           !(this.options.format === 'jpeg' && originalFormat === 'jpg');
 
         if (needsFormatConversion) {
-          // 转换格式模式
           newName = name.replace(ext, `.${this.options.format}`);
 
           switch (this.options.format) {
@@ -84,17 +81,15 @@ export default class SharpImageOptimizerPlugin {
                 .toBuffer();
               break;
             default:
-              throw new Error(`不支持的格式: ${this.options.format}`);
+              throw new Error(`Unsupported format: ${this.options.format}`);
           }
 
-          // 发出新资源
           compilation.emitAsset(newName, new RawSource(outputBuffer), {
             ...compilation.getAsset(name)?.info,
             sourceFilename: name,
           });
           processedAssets.set(name, newName);
         } else {
-          // 仅压缩模式，保持原格式
           switch (originalFormat) {
             case 'png':
               outputBuffer = await sharpInstance
@@ -119,22 +114,14 @@ export default class SharpImageOptimizerPlugin {
                 .toBuffer();
               break;
             default:
-              console.log(`跳过不支持的格式: ${originalFormat}`);
-              continue;
+              throw new Error(`Unsupported format: ${originalFormat}`);
           }
-          // 更新原资源
           compilation.updateAsset(name, new RawSource(outputBuffer));
         }
-
-        console.log(
-          `处理完成: ${name}${newName !== name ? ` -> ${newName}` : ''}`,
-        );
-        console.log(`原始大小: ${inputBuffer.length}`);
-        console.log(`处理后大小: ${outputBuffer.length}`);
       } catch (error) {
         compilation.errors.push(
           new compiler.webpack.WebpackError(
-            `处理图片失败 ${name}: ${
+            `Failed to process image ${name}: ${
               error instanceof Error ? error.message : String(error)
             }`,
           ),
@@ -142,9 +129,7 @@ export default class SharpImageOptimizerPlugin {
       }
     }
 
-    // 如果有格式转换，需要更新引用并删除原文件
     if (processedAssets.size > 0) {
-      // 更新所有 JS 资源中的引用
       for (const [name, asset] of Object.entries(assets)) {
         if (name.endsWith('.js')) {
           let source = asset.source().toString();
@@ -159,9 +144,6 @@ export default class SharpImageOptimizerPlugin {
                 newPath,
               );
               modified = true;
-              console.log(
-                `更新引用: 在 ${name} 中将 ${oldPath} 替换为 ${newPath}`,
-              );
             }
           }
 
@@ -171,10 +153,8 @@ export default class SharpImageOptimizerPlugin {
         }
       }
 
-      // 格式转换时一定删除原始图片资源
       for (const [oldName] of processedAssets) {
         compilation.deleteAsset(oldName);
-        console.log(`删除原始文件: ${oldName}`);
       }
     }
   }
