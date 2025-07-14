@@ -1,6 +1,6 @@
 import sharp from 'sharp';
 import path from 'path';
-import { Compilation, Compiler, sources } from '@rspack/core';
+import { Compilation, Compiler } from '@rspack/core';
 
 export default class SharpImageOptimizerPlugin {
   private options: {
@@ -8,182 +8,187 @@ export default class SharpImageOptimizerPlugin {
     quality: number;
     effort: number;
     format?: 'avif' | 'jpeg' | 'png' | 'webp' | 'jpg';
-    [key: string]: any;
   };
 
-  constructor(
-    options: Partial<typeof SharpImageOptimizerPlugin.prototype.options> = {},
-  ) {
+  constructor(options = {}) {
     this.options = {
-      test: /\.(png|jpe?g|webp|jpg)$/i,
-      quality: 50,
-      effort: 4,
-      format: 'avif',
+      test: /\.(png|jpe?g)$/i,
+      quality: 85,
+      effort: 6,
       ...options,
     };
   }
 
-  apply(compiler: Compiler) {
-    compiler.hooks.compilation.tap('SharpImageOptimizerPlugin', compilation => {
-      compilation.hooks.processAssets.tapAsync(
-        {
-          name: 'SharpImageOptimizerPlugin',
-          stage: Compilation.PROCESS_ASSETS_STAGE_OPTIMIZE_SIZE,
-        },
-        async (assets, callback) => {
-          try {
-            const promises = [];
-            const originalAssets = new Set<string>();
+  async optimize(
+    compiler: Compiler,
+    compilation: Compilation,
+    assets: Record<string, any>,
+  ) {
+    const { RawSource } = compiler.webpack.sources;
+    const processedAssets = new Map<string, string>();
 
-            for (const [fileName, asset] of Object.entries(assets)) {
-              if (this.options.test.test(fileName)) {
-                const originalExt = path
-                  .parse(fileName)
-                  .ext.toLowerCase()
-                  .replace('.', '');
-
-                if (
-                  this.options.format !== originalExt &&
-                  !(this.options.format === 'jpeg' && originalExt === 'jpg') &&
-                  !(this.options.format === 'jpg' && originalExt === 'jpeg')
-                ) {
-                  originalAssets.add(fileName);
-                }
-                promises.push(this.processImage(compilation, fileName, asset));
-              }
-            }
-
-            await Promise.all(promises);
-
-            originalAssets.forEach(fileName => {
-              compilation.deleteAsset(fileName);
-            });
-
-            callback();
-          } catch (error) {
-            callback(error as Error);
-          }
-        },
-      );
-    });
-  }
-
-  async processImage(compilation: Compilation, fileName: string, asset: any) {
-    try {
-      const { test, format, imagePath, publicPath, ...sharpOptions } =
-        this.options;
-      const originalExt = path
-        .parse(fileName)
-        .ext.toLowerCase()
-        .replace('.', '');
-
-      const needsFormatConversion =
-        format !== originalExt &&
-        !(format === 'jpeg' && originalExt === 'jpg') &&
-        !(format === 'jpg' && originalExt === 'jpeg');
-
-      const newFileName = needsFormatConversion
-        ? path.join(
-            imagePath || '',
-            `${path.parse(fileName).name}.${format || 'avif'}`,
-          )
-        : fileName;
-
-      // 获取资源内容
-      const content = asset.source();
-      const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content);
-
-      let outputBuffer;
-      switch (format) {
-        case 'jpeg':
-          outputBuffer = await sharp(buffer).jpeg(sharpOptions).toBuffer();
-          break;
-        case 'png':
-          outputBuffer = await sharp(buffer).png(sharpOptions).toBuffer();
-          break;
-        case 'webp':
-          outputBuffer = await sharp(buffer).webp(sharpOptions).toBuffer();
-          break;
-        case 'avif':
-        default:
-          outputBuffer = await sharp(buffer).avif(sharpOptions).toBuffer();
-          break;
+    // 第一步：处理图片资源
+    for (const [name, asset] of Object.entries(assets)) {
+      if (!this.options.test.test(name)) {
+        continue;
       }
 
-      if (!needsFormatConversion) {
-        compilation.updateAsset(fileName, new sources.RawSource(outputBuffer));
-      } else {
-        const originalInfo = compilation.getAsset(fileName);
-        if (!originalInfo) {
-          return;
+      try {
+        const inputBuffer = asset.source();
+        const ext = path.extname(name).toLowerCase();
+        const originalFormat = ext.slice(1);
+        const sharpInstance = sharp(inputBuffer);
+        let outputBuffer: Buffer;
+        let newName = name;
+
+        // 检查是否需要格式转换
+        const needsFormatConversion =
+          this.options.format &&
+          this.options.format !== originalFormat &&
+          !(this.options.format === 'jpg' && originalFormat === 'jpeg') &&
+          !(this.options.format === 'jpeg' && originalFormat === 'jpg');
+
+        if (needsFormatConversion) {
+          // 转换格式模式
+          newName = name.replace(ext, `.${this.options.format}`);
+
+          switch (this.options.format) {
+            case 'webp':
+              outputBuffer = await sharpInstance
+                .webp({
+                  quality: this.options.quality,
+                  effort: this.options.effort,
+                })
+                .toBuffer();
+              break;
+            case 'avif':
+              outputBuffer = await sharpInstance
+                .avif({
+                  quality: this.options.quality,
+                  effort: this.options.effort,
+                })
+                .toBuffer();
+              break;
+            case 'png':
+              outputBuffer = await sharpInstance
+                .png({
+                  quality: this.options.quality,
+                  effort: this.options.effort,
+                })
+                .toBuffer();
+              break;
+            case 'jpeg':
+            case 'jpg':
+              outputBuffer = await sharpInstance
+                .jpeg({ quality: this.options.quality })
+                .toBuffer();
+              break;
+            default:
+              throw new Error(`不支持的格式: ${this.options.format}`);
+          }
+
+          // 发出新资源
+          compilation.emitAsset(newName, new RawSource(outputBuffer), {
+            ...compilation.getAsset(name)?.info,
+            sourceFilename: name,
+          });
+          processedAssets.set(name, newName);
+        } else {
+          // 仅压缩模式，保持原格式
+          switch (originalFormat) {
+            case 'png':
+              outputBuffer = await sharpInstance
+                .png({
+                  quality: this.options.quality,
+                  effort: this.options.effort,
+                })
+                .toBuffer();
+              break;
+            case 'jpg':
+            case 'jpeg':
+              outputBuffer = await sharpInstance
+                .jpeg({ quality: this.options.quality })
+                .toBuffer();
+              break;
+            case 'webp':
+              outputBuffer = await sharpInstance
+                .webp({
+                  quality: this.options.quality,
+                  effort: this.options.effort,
+                })
+                .toBuffer();
+              break;
+            default:
+              console.log(`跳过不支持的格式: ${originalFormat}`);
+              continue;
+          }
+          // 更新原资源
+          compilation.updateAsset(name, new RawSource(outputBuffer));
         }
 
-        compilation.emitAsset(
-          newFileName,
-          new sources.RawSource(outputBuffer),
-          {
-            ...originalInfo.info,
-            sourceFilename: fileName,
-          },
+        console.log(
+          `处理完成: ${name}${newName !== name ? ` -> ${newName}` : ''}`,
+        );
+        console.log(`原始大小: ${inputBuffer.length}`);
+        console.log(`处理后大小: ${outputBuffer.length}`);
+      } catch (error) {
+        compilation.errors.push(
+          new compiler.webpack.WebpackError(
+            `处理图片失败 ${name}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          ),
         );
       }
-
-      // Rspack 处理 chunk 和文件关联的方式与 webpack 不同
-      // 这里使用 rspack 的 API 来处理文件关联
-      this.updateChunkRelations(compilation, fileName, newFileName);
-    } catch (error) {
-      console.error(
-        `[SharpImageOptimizerPlugin]: Error processing ${fileName}:`,
-        error,
-      );
-      throw error;
-    }
-  }
-
-  updateChunkRelations(
-    compilation: Compilation,
-    oldFileName: string,
-    newFileName: string,
-  ) {
-    // 检查 compilation 和 chunks 是否存在
-    if (!compilation?.chunks) {
-      return;
     }
 
-    // 遍历所有的 chunks
-    Array.from(compilation.chunks).forEach(chunk => {
-      // 检查文件是否在当前 chunk 中
-      if (chunk.files?.has(oldFileName)) {
-        // 创建一个新的 Set，包含所有现有文件和新文件
-        const newFiles = new Set([...Array.from(chunk.files), newFileName]);
-        // 使用类型断言来更新 files
-        (chunk as any).files = newFiles;
-      }
-    });
-  }
+    // 如果有格式转换，需要更新引用并删除原文件
+    if (processedAssets.size > 0) {
+      // 更新所有 JS 资源中的引用
+      for (const [name, asset] of Object.entries(assets)) {
+        if (name.endsWith('.js')) {
+          let source = asset.source().toString();
+          let modified = false;
 
-  updateReferences(
-    compilation: Compilation,
-    oldFileName: string,
-    newFileName: string,
-  ) {
-    const assets = compilation.getAssets();
-    for (const { name, source } of assets) {
-      if (name.endsWith('.css') || name.endsWith('.js')) {
-        let content = source.source().toString();
-        const regex = new RegExp(this.escapeRegExp(oldFileName), 'g');
-        if (content.match(regex)) {
-          const newPath = this.options.publicPath
-            ? path.posix.join(this.options.publicPath, newFileName)
-            : path.posix.join(newFileName);
-          content = content.replace(regex, newPath);
-          compilation.updateAsset(name, new sources.RawSource(content));
+          for (const [oldName, newName] of processedAssets.entries()) {
+            const oldPath = oldName.replace(/\\/g, '/');
+            const newPath = newName.replace(/\\/g, '/');
+            if (source.includes(oldPath)) {
+              source = source.replace(
+                new RegExp(oldPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+                newPath,
+              );
+              modified = true;
+              console.log(
+                `更新引用: 在 ${name} 中将 ${oldPath} 替换为 ${newPath}`,
+              );
+            }
+          }
+
+          if (modified) {
+            compilation.updateAsset(name, new RawSource(source));
+          }
         }
       }
+
+      // 格式转换时一定删除原始图片资源
+      for (const [oldName] of processedAssets) {
+        compilation.deleteAsset(oldName);
+        console.log(`删除原始文件: ${oldName}`);
+      }
     }
   }
 
-  escapeRegExp(string: string) {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  apply(compiler: Compiler) {
+    compiler.hooks.compilation.tap('SharpImageOptimizerPlugin', compilation => {
+      compilation.hooks.processAssets.tapPromise(
+        {
+          name: 'SharpImageOptimizerPlugin',
+          stage:
+            compiler.webpack.Compilation.PROCESS_ASSETS_STAGE_OPTIMIZE_SIZE,
+        },
+        async assets => this.optimize(compiler, compilation, assets),
+      );
+    });
   }
 }
