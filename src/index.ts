@@ -1,5 +1,4 @@
 import type { RsbuildPlugin } from '@rsbuild/core';
-import webpackPlugin from './webpack-plugin';
 import rspackPlugin from './rspack-plugins';
 
 export interface SharpImageOptimizerOptions {
@@ -43,10 +42,7 @@ export const sharpImageOptimizer = (
         if (isProd) {
           const config = api.getNormalizedConfig();
           const imagePath = config.output?.distPath?.image ?? 'static/image';
-          const isRspack = api.context.bundlerType === 'rspack';
-          const imageProcessor = isRspack ? rspackPlugin : webpackPlugin;
-
-          chain.plugin('sharp-image-optimizer-plugin').use(imageProcessor, [
+          chain.plugin('sharp-image-optimizer-plugin').use(rspackPlugin, [
             {
               test,
               quality,
